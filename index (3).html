@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tom @ Henkel</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #e0ddd8; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: sans-serif; }
+  h1 { color: #c00; font-size: 18px; font-weight: 700; margin-bottom: 6px; letter-spacing: 1px; }
+  #ui { display: flex; justify-content: space-between; width: 680px; padding: 5px 10px; font-size: 12px; color: #555; }
+  canvas { display: block; border-radius: 8px; border: 2px solid #c00; box-shadow: 0 4px 24px rgba(0,0,0,0.18); }
+  #tip { margin-top: 7px; font-size: 11px; color: #888; text-align: center; }
+</style>
+</head>
+<body>
+<h1>🏢 TOM @ HENKEL — Bürostuhl Simulator</h1>
+<div id="ui"><span>WASD / Pfeiltasten</span><span id="spd">Speed: 0.0</span></div>
+<canvas id="gc" width="680" height="420"></canvas>
+<div id="tip">Klick auf Canvas → dann mit Pfeiltasten / WASD fahren</div>
+
+<script>
+const cv = document.getElementById('gc');
+const cx = cv.getContext('2d');
+const spd = document.getElementById('spd');
+const keys = {};
+let px=200, py=230, vx=0, vy=0, dir=1, fr=0, trail=[], parts=[];
+let complaintTimer=0, currentComplaint='', bubbleVisible=false;
+
+const complaints = [
+  "Tom, das ist kein Spielplatz!! 😤",
+  "Ich melde das dem HR!!!",
+  "Kannst du BITTE aufhören?!",
+  "Völlig unprofessionell!!",
+  "Ich kann mich nicht konzentrieren!",
+  "Das gehört sofort verboten!",
+  "Meeting in 5 Minuten!!",
+  "THOMAS!!!! 😡",
+  "Mein Kaffee ist umgefallen!!",
+  "Ich schreib eine Mail an den Chef!",
+  "Das macht man hier nicht!!",
+  "Henkel hat Werte — du nicht!",
+  "Ich bin so fertig mit dir!!! 😤",
+  "Das ist das letzte Mal!!",
+];
+
+cv.setAttribute('tabindex','0');
+cv.addEventListener('keydown', e=>{ keys[e.key]=true; e.preventDefault(); });
+cv.addEventListener('keyup', e=>{ keys[e.key]=false; });
+cv.addEventListener('click', ()=>cv.focus());
+cv.focus();
+
+function particle(x,y){
+  const cols=['#c00','#e33','#ff8800'];
+  for(let i=0;i<2;i++) parts.push({
+    x, y, vx:(Math.random()-.5)*2.5, vy:-Math.random()*2-.5,
+    life:1, r:Math.random()*3+1, c:cols[Math.floor(Math.random()*3)]
+  });
+}
+
+function drawOffice(){
+  // Ceiling
+  cx.fillStyle='#f5f2ec';
+  cx.fillRect(0,0,680,80);
+  // Red top stripe (Henkel brand)
+  cx.fillStyle='#c00';
+  cx.fillRect(0,0,680,13);
+  // Wall
+  cx.fillStyle='#f2ede5';
+  cx.fillRect(0,13,680,247);
+  // Wall baseboard
+  cx.fillStyle='#ddd';
+  cx.fillRect(0,78,680,3);
+  // Floor
+  for(let i=0;i<680;i+=45){
+    for(let j=260;j<420;j+=45){
+      cx.fillStyle=(Math.floor(i/45)+Math.floor(j/45))%2===0?'#e5e0d8':'#ece8e0';
+      cx.fillRect(i,j,45,45);
+    }
+  }
+  // Floor edge
+  cx.fillStyle='rgba(0,0,0,0.06)';
+  cx.fillRect(0,258,680,4);
+
+  // HENKEL Logo
+  cx.fillStyle='#c00';
+  cx.font='bold 30px sans-serif'; cx.textAlign='center';
+  cx.fillText('HENKEL', 340, 56);
+  cx.font='10px sans-serif'; cx.fillStyle='#aaa';
+  cx.fillText('Quality & Innovation Since 1876', 340, 71);
+
+  // Overhead lights
+  for(let lx=100;lx<680;lx+=180){
+    cx.fillStyle='rgba(255,250,220,0.6)';
+    cx.beginPath(); cx.ellipse(lx,82,55,18,0,0,Math.PI*2); cx.fill();
+    cx.fillStyle='#dddbd5';
+    cx.fillRect(lx-9,76,18,7);
+  }
+
+  // Left window
+  drawWindow(40, 90, 100, 130);
+  // Right window
+  drawWindow(540, 90, 100, 130);
+
+  // Henkel motto poster
+  cx.fillStyle='white';
+  cx.beginPath(); cx.roundRect(292,88,96,60,4); cx.fill();
+  cx.strokeStyle='#c00'; cx.lineWidth=1.5; cx.stroke();
+  cx.fillStyle='#c00'; cx.font='bold 10px sans-serif'; cx.textAlign='center';
+  cx.fillText('PURPOSE', 340, 107);
+  cx.fillText('PASSION', 340, 121);
+  cx.fillText('PERFORMANCE', 340, 135);
+  cx.fillStyle='rgba(200,0,0,0.12)';
+  cx.fillRect(292,88,96,12);
+
+  // Desks
+  drawDesk(140, 265, 'TOM');
+  drawDesk(490, 265, 'KOLLEGIN');
+
+  // Plants
+  drawPlant(14, 262);
+  drawPlant(650, 262);
+}
+
+function drawWindow(x,y,w,h){
+  // Sky
+  cx.fillStyle='#c5dcf0';
+  cx.fillRect(x,y,w,h);
+  // Buildings outside
+  cx.fillStyle='#a0b8c8';
+  cx.fillRect(x+5,y+50,25,h-50);
+  cx.fillRect(x+35,y+30,20,h-30);
+  cx.fillRect(x+60,y+60,30,h-60);
+  // Window pane
+  cx.strokeStyle='#ccc'; cx.lineWidth=2.5;
+  cx.strokeRect(x,y,w,h);
+  cx.strokeStyle='rgba(255,255,255,0.6)'; cx.lineWidth=1;
+  cx.beginPath(); cx.moveTo(x+w/2,y); cx.lineTo(x+w/2,y+h); cx.stroke();
+  cx.beginPath(); cx.moveTo(x,y+h/2); cx.lineTo(x+w,y+h/2); cx.stroke();
+  // Shine
+  cx.fillStyle='rgba(255,255,255,0.22)';
+  cx.fillRect(x+4,y+4,18,55);
+}
+
+function drawDesk(x,y,label){
+  // Desk top
+  cx.fillStyle='#d4c4a8';
+  cx.beginPath(); cx.roundRect(x-58,y-22,116,58,4); cx.fill();
+  cx.strokeStyle='#b8a888'; cx.lineWidth=1; cx.stroke();
+  // Legs
+  cx.strokeStyle='#999'; cx.lineWidth=2;
+  cx.beginPath(); cx.moveTo(x-52,y+36); cx.lineTo(x-52,y+58); cx.stroke();
+  cx.beginPath(); cx.moveTo(x+52,y+36); cx.lineTo(x+52,y+58); cx.stroke();
+  // Monitor
+  cx.fillStyle='#1a1a1a';
+  cx.beginPath(); cx.roundRect(x-26,y-64,52,38,3); cx.fill();
+  cx.fillStyle='#2a7fba';
+  cx.beginPath(); cx.roundRect(x-23,y-61,46,30,2); cx.fill();
+  cx.fillStyle='rgba(255,255,255,0.15)';
+  cx.fillRect(x-23,y-61,12,30);
+  cx.fillStyle='white'; cx.font='7px sans-serif'; cx.textAlign='center';
+  cx.fillText('HENKEL', x, y-47);
+  cx.fillStyle='rgba(255,255,255,0.4)';
+  cx.fillRect(x-18,y-43,36,2); cx.fillRect(x-18,y-39,24,2);
+  cx.fillStyle='#333';
+  cx.fillRect(x-4,y-26,8,8); cx.fillRect(x-11,y-19,22,4);
+  // Keyboard
+  cx.fillStyle='#d5d0c8';
+  cx.beginPath(); cx.roundRect(x-23,y-13,46,13,2); cx.fill();
+  cx.strokeStyle='#bbb'; cx.lineWidth=0.5; cx.stroke();
+  // Mouse
+  cx.fillStyle='#d5d0c8';
+  cx.beginPath(); cx.ellipse(x+34,y-5,7,10,0,0,Math.PI*2); cx.fill();
+  // Coffee
+  cx.fillStyle='white';
+  cx.beginPath(); cx.roundRect(x-50,y-20,15,17,3); cx.fill();
+  cx.strokeStyle='#c00'; cx.lineWidth=1; cx.stroke();
+  cx.fillStyle='#c00'; cx.font='6px sans-serif'; cx.textAlign='center';
+  cx.fillText('H', x-42, y-8);
+  cx.strokeStyle='#ccc'; cx.lineWidth=1.5;
+  cx.beginPath(); cx.arc(x-33,y-12,5,-0.5,0.5); cx.stroke();
+  // Nameplate
+  cx.fillStyle='#c00';
+  cx.beginPath(); cx.roundRect(x-22,y+30,44,12,2); cx.fill();
+  cx.fillStyle='white'; cx.font='bold 8px sans-serif'; cx.textAlign='center';
+  cx.fillText(label, x, y+40);
+}
+
+function drawPlant(x,y){
+  cx.fillStyle='#8b6510';
+  cx.fillRect(x-8,y,16,28);
+  cx.strokeStyle='#6a4e08'; cx.lineWidth=1; cx.strokeRect(x-8,y,16,28);
+  cx.fillStyle='#4a8020';
+  for(let i=0;i<6;i++){
+    const angle=(i/6)*Math.PI*2-Math.PI/2;
+    const lx=x+Math.cos(angle)*20, ly=y-14+Math.sin(angle)*10;
+    cx.beginPath(); cx.ellipse(lx,ly,13,6,angle,0,Math.PI*2); cx.fill();
+  }
+  cx.fillStyle='#5aaa28';
+  cx.beginPath(); cx.ellipse(x,y-22,10,18,0,0,Math.PI*2); cx.fill();
+}
+
+function drawChair(x,y,d,roll,f){
+  cx.save(); cx.translate(x,y); cx.scale(d,1);
+  const b=roll?Math.sin(f*.3)*2:0;
+  cx.fillStyle='#111';
+  cx.beginPath(); cx.roundRect(-30,-4+b,60,9,3); cx.fill();
+  cx.strokeStyle='#333'; cx.lineWidth=.5; cx.stroke();
+  cx.fillStyle='#0d0d0d';
+  cx.beginPath(); cx.roundRect(-26,-64+b,52,60,5); cx.fill();
+  cx.fillStyle='#1a1a1a';
+  cx.beginPath(); cx.roundRect(-20,-62+b,40,46,3); cx.fill();
+  cx.strokeStyle='#333'; cx.lineWidth=1.5;
+  cx.beginPath(); cx.moveTo(0,-4+b); cx.lineTo(0,16+b); cx.stroke();
+  [-0.55,-0.18,0.18,0.55,0.9].forEach(a=>{
+    const wx=Math.cos(a)*26, wy=Math.sin(a)*9+16+b;
+    cx.strokeStyle='#333'; cx.lineWidth=1.5;
+    cx.beginPath(); cx.moveTo(0,16+b); cx.lineTo(wx,wy); cx.stroke();
+    cx.fillStyle=roll?'#c00':'#222';
+    cx.beginPath(); cx.arc(wx,wy,4.5,0,Math.PI*2); cx.fill();
+    if(roll){ cx.strokeStyle='rgba(200,0,0,.25)'; cx.lineWidth=1; cx.beginPath(); cx.arc(wx,wy,7,0,Math.PI*2); cx.stroke(); }
+  });
+  cx.strokeStyle='#333'; cx.lineWidth=1.5;
+  cx.beginPath(); cx.moveTo(-26,-18+b); cx.lineTo(-40,-10+b); cx.stroke();
+  cx.beginPath(); cx.moveTo(-40,-10+b); cx.lineTo(-40,-2+b); cx.stroke();
+  cx.beginPath(); cx.moveTo(26,-18+b); cx.lineTo(40,-10+b); cx.stroke();
+  cx.beginPath(); cx.moveTo(40,-10+b); cx.lineTo(40,-2+b); cx.stroke();
+  cx.restore();
+}
+
+function drawTom(x,y,d,roll,f){
+  cx.save(); cx.translate(x,y); cx.scale(d,1);
+  const b=roll?Math.sin(f*.3)*1.5:0;
+  const sw=roll?Math.sin(f*.4)*5:0;
+
+  // Blaues Hemd (Büro-Look)
+  cx.fillStyle='#2244aa';
+  cx.beginPath(); cx.roundRect(-18,-160+b,36,72,[3,3,0,0]); cx.fill();
+  cx.strokeStyle='#3355cc'; cx.lineWidth=0.8;
+  cx.beginPath(); cx.moveTo(0,-160+b); cx.lineTo(0,-90+b); cx.stroke();
+
+  // Krawatte
+  cx.fillStyle='#c00';
+  cx.beginPath();
+  cx.moveTo(-4,-155+b); cx.lineTo(4,-155+b); cx.lineTo(3,-120+b); cx.lineTo(0,-112+b); cx.lineTo(-3,-120+b); cx.closePath();
+  cx.fill();
+
+  // Hals (weiße Haut)
+  cx.fillStyle='#f8d8b0';
+  cx.fillRect(-8,-158+b,16,12);
+
+  // Kopf
+  cx.fillStyle='#f8d8b0';
+  cx.beginPath(); cx.arc(0,-169+b,20,0,Math.PI*2); cx.fill();
+
+  // Blonde Locken
+  cx.fillStyle='#f0d040';
+  cx.beginPath(); cx.arc(-8,-185+b,9,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.arc(8,-185+b,9,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.arc(0,-188+b,11,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.arc(-15,-181+b,6,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.arc(15,-181+b,6,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.arc(-10,-175+b,5,Math.PI,0); cx.fill();
+  cx.beginPath(); cx.arc(10,-175+b,5,Math.PI,0); cx.fill();
+  cx.fillStyle='#d4b020';
+  cx.beginPath(); cx.arc(-12,-180+b,4,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.arc(12,-180+b,4,0,Math.PI*2); cx.fill();
+
+  // Augen (blau)
+  cx.fillStyle='white';
+  cx.beginPath(); cx.ellipse(-6,-171+b,4,3,0,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.ellipse(6,-171+b,4,3,0,0,Math.PI*2); cx.fill();
+  cx.fillStyle='#4499cc';
+  cx.beginPath(); cx.arc(-6,-171+b,2.2,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.arc(6,-171+b,2.2,0,Math.PI*2); cx.fill();
+  cx.fillStyle='#111';
+  cx.beginPath(); cx.arc(-6,-171+b,1.1,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.arc(6,-171+b,1.1,0,Math.PI*2); cx.fill();
+
+  // Grinsen
+  cx.strokeStyle='#c08060'; cx.lineWidth=1.3;
+  cx.beginPath(); cx.arc(0,-165+b,6,.2,Math.PI-.2); cx.stroke();
+
+  // Bart-Stoppeln (blond)
+  cx.strokeStyle='rgba(200,180,50,0.35)'; cx.lineWidth=0.8;
+  cx.beginPath(); cx.arc(0,-162+b,10,0.2,Math.PI-.2); cx.stroke();
+
+  // Goldketten (über Hemd)
+  cx.strokeStyle='#FFD700'; cx.lineWidth=2.8;
+  cx.beginPath(); cx.arc(0,-148+b,10,.5,Math.PI-.5); cx.stroke();
+  cx.beginPath(); cx.arc(0,-146+b,15,.5,Math.PI-.5); cx.stroke();
+  cx.strokeStyle='rgba(255,215,0,.4)'; cx.lineWidth=1.5;
+  cx.beginPath(); cx.arc(0,-144+b,20,.6,Math.PI-.6); cx.stroke();
+
+  // Linker Arm
+  cx.save(); cx.translate(-20,-122+b); cx.rotate((-.28+sw*.015)*Math.PI);
+  cx.fillStyle='#2244aa';
+  cx.beginPath(); cx.roundRect(-4,-4,9,28,3); cx.fill();
+  cx.fillStyle='#f8d8b0';
+  cx.beginPath(); cx.roundRect(-5,20,10,16,4); cx.fill();
+  // Tattoo (Rose angedeutet)
+  cx.strokeStyle='rgba(60,40,20,0.25)'; cx.lineWidth=1;
+  cx.beginPath(); cx.arc(-1,27,5,0,Math.PI*2); cx.stroke();
+  cx.beginPath(); cx.arc(-1,27,3,0,Math.PI*2); cx.stroke();
+  // Goldene Uhr
+  cx.fillStyle='#FFD700';
+  cx.beginPath(); cx.roundRect(-6,26,12,7,2); cx.fill();
+  cx.fillStyle='rgba(0,0,0,.2)';
+  cx.beginPath(); cx.roundRect(-4,27,8,5,1); cx.fill();
+  // Ring
+  cx.strokeStyle='#FFD700'; cx.lineWidth=2;
+  cx.beginPath(); cx.arc(-1,33,3.5,0,Math.PI*2); cx.stroke();
+  cx.restore();
+
+  // Rechter Arm – Peace-Zeichen
+  cx.save(); cx.translate(20,-122+b); cx.rotate((.28-sw*.015)*Math.PI);
+  cx.fillStyle='#2244aa';
+  cx.beginPath(); cx.roundRect(-4,-4,9,28,3); cx.fill();
+  cx.fillStyle='#f8d8b0';
+  cx.beginPath(); cx.roundRect(-5,20,10,16,4); cx.fill();
+  cx.strokeStyle='#f8d8b0'; cx.lineWidth=2.2;
+  cx.beginPath(); cx.moveTo(1,20); cx.lineTo(-4,11); cx.stroke();
+  cx.beginPath(); cx.moveTo(1,20); cx.lineTo(5,11); cx.stroke();
+  cx.strokeStyle='#FFD700'; cx.lineWidth=2;
+  cx.beginPath(); cx.arc(2,28,3.5,0,Math.PI*2); cx.stroke();
+  cx.restore();
+
+  // Beine (Jeans)
+  cx.fillStyle='#2a3a6a';
+  cx.fillRect(-10,-80+b,8,22);
+  cx.fillRect(2,-80+b,8,22);
+
+  // Weiße Sneaker
+  cx.fillStyle='#f0f0f0';
+  cx.beginPath(); cx.roundRect(-14,-59+b,14,7,3); cx.fill();
+  cx.beginPath(); cx.roundRect(0,-59+b,14,7,3); cx.fill();
+  cx.strokeStyle='#c00'; cx.lineWidth=0.8; cx.stroke();
+
+  cx.restore();
+}
+
+function drawColleague(x, y, complaining){
+  cx.save(); cx.translate(x,y);
+
+  // Stuhl
+  cx.fillStyle='#111';
+  cx.beginPath(); cx.roundRect(-30,76,60,9,3); cx.fill();
+  cx.fillStyle='#0d0d0d';
+  cx.beginPath(); cx.roundRect(-26,16,52,60,5); cx.fill();
+  cx.fillStyle='#1a1a1a';
+  cx.beginPath(); cx.roundRect(-20,18,40,46,3); cx.fill();
+  cx.strokeStyle='#333'; cx.lineWidth=1.5;
+  cx.beginPath(); cx.moveTo(0,76); cx.lineTo(0,96); cx.stroke();
+  [-0.55,-0.18,0.18,0.55,0.9].forEach(a=>{
+    const wx=Math.cos(a)*26, wy=Math.sin(a)*9+96;
+    cx.strokeStyle='#333'; cx.lineWidth=1.5;
+    cx.beginPath(); cx.moveTo(0,96); cx.lineTo(wx,wy); cx.stroke();
+    cx.fillStyle='#222';
+    cx.beginPath(); cx.arc(wx,wy,4.5,0,Math.PI*2); cx.fill();
+  });
+  cx.strokeStyle='#333'; cx.lineWidth=1.5;
+  cx.beginPath(); cx.moveTo(-26,62); cx.lineTo(-40,70); cx.stroke();
+  cx.beginPath(); cx.moveTo(-40,70); cx.lineTo(-40,78); cx.stroke();
+  cx.beginPath(); cx.moveTo(26,62); cx.lineTo(40,70); cx.stroke();
+  cx.beginPath(); cx.moveTo(40,70); cx.lineTo(40,78); cx.stroke();
+
+  // Body (rotes Büro-Outfit)
+  cx.fillStyle='#bb3333';
+  cx.beginPath(); cx.roundRect(-16,20,32,58,[3,3,0,0]); cx.fill();
+  // Kragen
+  cx.fillStyle='white';
+  cx.beginPath(); cx.roundRect(-12,20,24,10,2); cx.fill();
+  // Kopf
+  cx.fillStyle='#ebb888';
+  cx.beginPath(); cx.arc(0,8,18,0,Math.PI*2); cx.fill();
+  // Braune Haare
+  cx.fillStyle='#4a2808';
+  cx.beginPath(); cx.arc(-6,-5,8,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.arc(6,-5,8,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.arc(0,-8,10,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.arc(-15,5,5,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.arc(15,6,6,0,Math.PI*2); cx.fill();
+  cx.fillStyle='#3a1a04';
+  cx.fillRect(-16,-2,6,18);
+
+  // Augen
+  cx.fillStyle='white';
+  cx.beginPath(); cx.ellipse(-6,7,3.5,3,0,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.ellipse(6,7,3.5,3,0,0,Math.PI*2); cx.fill();
+  cx.fillStyle=complaining?'#aa2222':'#4a2810';
+  cx.beginPath(); cx.arc(-6,7,1.8,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.arc(6,7,1.8,0,Math.PI*2); cx.fill();
+  cx.fillStyle='#111';
+  cx.beginPath(); cx.arc(-6,7,0.9,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.arc(6,7,0.9,0,Math.PI*2); cx.fill();
+
+  if(complaining){
+    // Saurer Mund
+    cx.strokeStyle='#a04030'; cx.lineWidth=1.5;
+    cx.beginPath(); cx.arc(0,16,5,Math.PI+.4,-.4); cx.stroke();
+    // Zornesfalten
+    cx.strokeStyle='rgba(120,50,20,0.5)'; cx.lineWidth=1.2;
+    cx.beginPath(); cx.moveTo(-9,2); cx.lineTo(-3,5); cx.stroke();
+    cx.beginPath(); cx.moveTo(9,2); cx.lineTo(3,5); cx.stroke();
+    // Rote Backen
+    cx.fillStyle='rgba(220,80,60,0.28)';
+    cx.beginPath(); cx.ellipse(-10,12,7,4,0,0,Math.PI*2); cx.fill();
+    cx.beginPath(); cx.ellipse(10,12,7,4,0,0,Math.PI*2); cx.fill();
+  } else {
+    cx.strokeStyle='#a04030'; cx.lineWidth=1.2;
+    cx.beginPath(); cx.arc(0,14,4,.2,Math.PI-.2); cx.stroke();
+  }
+
+  // Linker Arm
+  cx.save(); cx.translate(-16,34); cx.rotate(-.2);
+  cx.fillStyle='#bb3333';
+  cx.beginPath(); cx.roundRect(-4,-4,8,26,3); cx.fill();
+  cx.fillStyle='#ebb888';
+  cx.beginPath(); cx.roundRect(-5,20,10,14,4); cx.fill();
+  cx.restore();
+
+  // Rechter Arm
+  cx.save(); cx.translate(16,34); cx.rotate(.2);
+  cx.fillStyle='#bb3333';
+  cx.beginPath(); cx.roundRect(-4,-4,8,26,3); cx.fill();
+  cx.fillStyle='#ebb888';
+  cx.beginPath(); cx.roundRect(-5,20,10,14,4); cx.fill();
+  if(complaining){
+    // Zeigefinger hoch
+    cx.strokeStyle='#ebb888'; cx.lineWidth=2.5;
+    cx.beginPath(); cx.moveTo(1,20); cx.lineTo(1,8); cx.stroke();
+    cx.beginPath(); cx.arc(1,7,3,0,Math.PI*2); cx.fill();
+  }
+  cx.restore();
+
+  // Beine & Schuhe
+  cx.fillStyle='#222';
+  cx.fillRect(-9,76,7,20);
+  cx.fillRect(2,76,7,20);
+  cx.fillStyle='#2a2a2a';
+  cx.beginPath(); cx.roundRect(-13,93,13,7,3); cx.fill();
+  cx.beginPath(); cx.roundRect(0,93,13,7,3); cx.fill();
+
+  cx.restore();
+}
+
+function drawBubble(bx, by, text){
+  if(!bubbleVisible||!text) return;
+  cx.save();
+  cx.font='11px sans-serif'; cx.textAlign='left';
+  const words=text.split(' ');
+  let lines=[], line='';
+  words.forEach(w=>{
+    const test=line+(line?' ':'')+w;
+    if(cx.measureText(test).width>130){ lines.push(line); line=w; }
+    else line=test;
+  });
+  lines.push(line);
+  const pad=10, lh=15, bw=152, bh=lines.length*lh+pad*2+4;
+  const tx=bx-bw-16, ty=by-bh-22;
+  cx.fillStyle='white';
+  cx.beginPath(); cx.roundRect(tx,ty,bw,bh,8); cx.fill();
+  cx.strokeStyle='#c00'; cx.lineWidth=2; cx.stroke();
+  // Tail
+  cx.fillStyle='white';
+  cx.beginPath(); cx.moveTo(tx+bw-22,ty+bh); cx.lineTo(tx+bw-5,ty+bh+15); cx.lineTo(tx+bw-38,ty+bh); cx.fill();
+  cx.strokeStyle='#c00'; cx.lineWidth=2;
+  cx.beginPath(); cx.moveTo(tx+bw-22,ty+bh+.5); cx.lineTo(tx+bw-5,ty+bh+15); cx.lineTo(tx+bw-38,ty+bh+.5); cx.stroke();
+  cx.fillStyle='white'; cx.fillRect(tx+bw-39,ty+bh-1,19,3);
+  cx.fillStyle='#c00';
+  lines.forEach((l,i)=>{ cx.fillText(l, tx+pad, ty+pad+13+i*lh); });
+  cx.restore();
+}
+
+function loop(){
+  if(keys['ArrowLeft']||keys['a']||keys['A']){ vx-=1.2; dir=-1; }
+  if(keys['ArrowRight']||keys['d']||keys['D']){ vx+=1.2; dir=1; }
+  if(keys['ArrowUp']||keys['w']||keys['W']) vy-=0.9;
+  if(keys['ArrowDown']||keys['s']||keys['S']) vy+=0.9;
+  vx*=.84; vy*=.84;
+  px+=vx; py+=vy;
+  if(px<45){ px=45; vx*=-.5; } if(px>635){ px=635; vx*=-.5; }
+  if(py<120){ py=120; vy*=-.5; } if(py>275){ py=275; vy*=-.5; }
+
+  const speed=Math.sqrt(vx*vx+vy*vy);
+  const roll=speed>.4;
+
+  complaintTimer--;
+  if(speed>0.8&&complaintTimer<=0){
+    currentComplaint=complaints[Math.floor(Math.random()*complaints.length)];
+    bubbleVisible=true;
+    complaintTimer=90+Math.floor(Math.random()*50);
+  }
+  if(complaintTimer<0) bubbleVisible=false;
+
+  trail.push({x:px,y:py});
+  if(trail.length>16) trail.shift();
+  if(roll&&fr%6===0) particle(px+(Math.random()-.5)*25, py+90);
+  parts.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=.08; p.life-=.05; });
+  parts=parts.filter(p=>p.life>0);
+  fr++;
+
+  drawOffice();
+
+  // Trail
+  for(let i=0;i<trail.length;i++){
+    const t=trail[i];
+    cx.fillStyle=`rgba(200,0,0,${(i/trail.length)*.07})`;
+    cx.beginPath(); cx.arc(t.x,t.y+90,5,0,Math.PI*2); cx.fill();
+  }
+
+  // Particles
+  parts.forEach(p=>{
+    cx.fillStyle=p.c+Math.floor(p.life*255).toString(16).padStart(2,'0');
+    cx.beginPath(); cx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2); cx.fill();
+  });
+
+  // Kollegin (fixed rechts)
+  drawColleague(510, 212, bubbleVisible);
+  drawBubble(510, 212, currentComplaint);
+
+  // Tom (bewegt sich)
+  drawChair(px, py+80, dir, roll, fr);
+  drawTom(px, py+80, dir, roll, fr);
+
+  // HUD
+  cx.fillStyle='rgba(255,255,255,.9)';
+  cx.beginPath(); cx.roundRect(10,10,155,36,6); cx.fill();
+  cx.strokeStyle='#c00'; cx.lineWidth=1.5; cx.stroke();
+  cx.fillStyle='#c00'; cx.font='bold 10px sans-serif'; cx.textAlign='left';
+  cx.fillText('🏢 HENKEL OFFICE', 18,23);
+  cx.fillStyle='#666'; cx.font='9px sans-serif';
+  cx.fillText('Speed', 18,35);
+  const bars=Math.min(10,Math.floor(speed*.8));
+  for(let i=0;i<10;i++){
+    cx.fillStyle=i<bars?'#c00':'rgba(0,0,0,.1)';
+    cx.beginPath(); cx.roundRect(56+i*10,27,8,7,2); cx.fill();
+  }
+
+  spd.textContent=`Speed: ${speed.toFixed(1)}`;
+  cx.textAlign='left';
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
